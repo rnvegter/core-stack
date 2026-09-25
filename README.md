@@ -126,13 +126,14 @@ Don't have the Cloudflare or Tailscale parts ready yet? Remove them from
 ### 1. AdGuard Home
 
 1. Open `http://<server-ip>:3000` for the first-run wizard.
-2. **Admin web interface:** listen on **All interfaces**, port **8053**
-   (the value of `ADGUARD_WEB_PORT` in `.env`). **Don't keep the default
-   80:** the stack only publishes `ADGUARD_WEB_PORT`, and port 80 on the
-   server is Homepage.
+2. **Admin web interface:** listen on **All interfaces**, keep the default
+   port **80**. That's the port *inside* the container; the stack publishes
+   it on the server as `ADGUARD_WEB_PORT` (8053).
 3. **DNS server:** **All interfaces**, port **53**.
-4. Create the admin account and finish. The wizard sends you to
-   `http://<server-ip>:8053`, where the admin page lives from now on.
+4. Create the admin account and finish. The wizard then sends your browser
+   to port 80 on the server, which is **Homepage**, not AdGuard. That's
+   expected: open `http://<server-ip>:8053` instead. That's where the admin
+   page lives from now on.
 5. **Settings → DNS settings → Upstream DNS servers:** pick encrypted
    upstreams, for example:
 
@@ -336,19 +337,18 @@ docker compose down                # stop everything (config is kept)
 
 ## Troubleshooting
 
-- **After the AdGuard wizard you land on Homepage, or the admin page doesn't
-  load:** the admin port chosen in the wizard doesn't match
-  `ADGUARD_WEB_PORT`. Fix it in AdGuard's config file (as root, because
-  AdGuard owns it):
+- **AdGuard's admin page gives "unable to connect" on port 8053:** AdGuard
+  must listen on port 80 inside the container. Check with
+  `docker compose logs adguardhome | grep "plain server"`: it should say
+  `addr=0.0.0.0:80`. If it shows another port (because a different port was
+  chosen in the wizard), set it back to 80 in AdGuard's config file (as root,
+  because AdGuard owns it):
 
   ```bash
   docker compose stop adguardhome
-  sudo sed -i 's/^\([[:space:]]*address: 0\.0\.0\.0:\)[0-9]*$/\18053/' config/adguardhome/conf/AdGuardHome.yaml
+  sudo sed -i 's/^\([[:space:]]*address: 0\.0\.0\.0:\)[0-9]*$/\180/' config/adguardhome/conf/AdGuardHome.yaml
   docker compose up -d adguardhome
   ```
-
-  Use your `ADGUARD_WEB_PORT` instead of `8053` if you changed it. The
-  `address:` line under `http:` should now end in that port.
 - **`setup.sh` says port 53 is in use:** another DNS server runs on the
   host. For Ubuntu's `systemd-resolved` the script offers the fix. For
   others (for example `dnsmasq`), stop that service, or set `DNS_BIND_IP` to

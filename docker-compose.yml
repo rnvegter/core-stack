@@ -16,10 +16,10 @@ services:
       # Plain DNS for the house
       - ${DNS_BIND_IP}:53:53/tcp
       - ${DNS_BIND_IP}:53:53/udp
-      # Admin interface: same port inside and outside the container, because
-      # AdGuard redirects the browser to this port after the setup wizard.
-      # Enter ADGUARD_WEB_PORT as the admin port in the wizard.
-      - ${ADGUARD_WEB_PORT}:${ADGUARD_WEB_PORT}
+      # Admin interface. AdGuard listens on its default port 80 inside the
+      # container (keep 80 in the setup wizard); the host publishes it on
+      # ADGUARD_WEB_PORT because host port 80 is Homepage.
+      - ${ADGUARD_WEB_PORT}:80
       # First-run setup wizard (always port 3000 inside the container)
       - ${ADGUARD_SETUP_PORT}:3000
       # Optional: DNS-over-TLS, e.g. for Android "Private DNS". Needs a
