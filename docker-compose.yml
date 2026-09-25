@@ -35,8 +35,9 @@ services:
       PUID: ${PUID}
       PGID: ${PGID}
       TZ: ${TZ}
-      # Names/IPs the page may be opened on (Homepage rejects others)
-      HOMEPAGE_ALLOWED_HOSTS: ${SERVER_NAME},${SERVER_IP},localhost,127.0.0.1
+      # Names/IPs the page may be opened on (Homepage rejects others).
+      # Add a Cloudflare hostname via HOMEPAGE_EXTRA_HOSTS in .env.
+      HOMEPAGE_ALLOWED_HOSTS: ${SERVER_NAME},${SERVER_IP},localhost,${HOMEPAGE_EXTRA_HOSTS:-127.0.0.1}
       # Available in the config files as {{HOMEPAGE_VAR_SERVER}}
       HOMEPAGE_VAR_SERVER: ${SERVER_IP}
     volumes:

@@ -181,34 +181,159 @@ answers on the names in `HOMEPAGE_ALLOWED_HOSTS` (built from `SERVER_NAME` and
 
 ### 3. Cloudflare Tunnel
 
-The tunnel runs as soon as the token is in `.env`. You manage which apps are
-reachable in the Cloudflare dashboard, not in this repo.
+#### What the tunnel does
 
-**Expose an app:**
+The `cloudflared` container opens an **outgoing** connection from your server
+to Cloudflare. When someone visits, for example, `requests.yourdomain.nl`,
+Cloudflare sends the request through that connection to the app on your
+server. Your router needs **no open ports**, and your home IP address stays
+hidden.
 
-1. Zero Trust dashboard → **Networks → Tunnels → your tunnel → Public
-   hostname → Add a public hostname**.
-2. Subdomain and domain, for example `requests` + `yourdomain.nl`.
-3. Service: type **HTTP**, URL `host.docker.internal:<port>`, for example
-   `host.docker.internal:5055` for Seerr.
+```
+Browser ── requests.yourdomain.nl ── Cloudflare ══ tunnel ══ cloudflared ── app on the server
+                                         │
+                              Cloudflare Access: login
+                              check before anything
+                              reaches your server
+```
 
-`host.docker.internal` is this server, so any app on it is reachable
+You manage which apps are reachable in the Cloudflare dashboard, not in this
+repo. The container only needs a token.
+
+> Cloudflare renames menus now and then. The names below are current as of
+> writing; older dashboards call some of them differently (noted in
+> brackets).
+
+#### Step 1: Put your domain on Cloudflare
+
+Skip this if your domain already uses Cloudflare.
+
+1. Sign up at https://dash.cloudflare.com and choose **Add a domain**. Enter
+   your domain and pick the **Free** plan.
+2. Cloudflare shows two **nameservers** (like `xxx.ns.cloudflare.com`). At the
+   company where you bought the domain (for example TransIP), replace the
+   domain's nameservers with these two.
+3. Wait until Cloudflare shows the domain as **Active**. That usually takes
+   minutes, sometimes a few hours.
+
+#### Step 2: Set up Zero Trust
+
+1. In the Cloudflare dashboard open **Zero Trust**.
+2. The first time, choose a **team name** (for example `familyname`). This
+   becomes part of your login page address.
+3. Choose the **Free** plan (up to 50 users). Cloudflare may ask for payment
+   details even for the free plan.
+
+#### Step 3: Create the tunnel and copy the token
+
+1. Zero Trust → **Networks → Tunnels** (sometimes **Networking → Tunnels**) →
+   **Create a tunnel**.
+2. Choose **Cloudflared** as the connector type, name the tunnel (for
+   example `home`) and save.
+3. Cloudflare shows install commands. Choose **Docker** and copy only the
+   long string after `--token`. You don't need to run the command itself:
+   this stack runs `cloudflared` for you.
+
+#### Step 4: Give the token to the server
+
+On the server, in the `core-stack` folder:
+
+```bash
+nano .env
+```
+
+Fill in the token and make sure `COMPOSE_PROFILES` contains `tunnel`:
+
+```
+COMPOSE_PROFILES=tunnel,tailscale
+CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoi...
+```
+
+(Only using the tunnel for now? Write `COMPOSE_PROFILES=tunnel`.) Save with
+**Ctrl+O**, **Enter**, **Ctrl+X**, then start it:
+
+```bash
+docker compose up -d
+```
+
+#### Step 5: Check that the tunnel is connected
+
+In Zero Trust → **Networks → Tunnels**, your tunnel should show **Healthy**.
+On the server:
+
+```bash
+docker compose logs --tail 20 cloudflared
+```
+
+You should see lines with `Registered tunnel connection`.
+
+#### Step 6: Publish an app
+
+1. Open your tunnel → tab **Routes** → **Add route** → **Published
+   application** (older dashboards: tab **Public Hostname** → **Add a public
+   hostname**).
+2. **Subdomain** and **domain:** for example `requests` + `yourdomain.nl`.
+   Leave **path** empty.
+3. **Service URL:** `http://host.docker.internal:<port>` (older dashboards:
+   type **HTTP**, URL `host.docker.internal:<port>`). For example
+   `http://host.docker.internal:5055` for Seerr.
+4. Save. Cloudflare creates the DNS record for you.
+
+`host.docker.internal` means "this server", so any app on it is reachable
 through its published port, whichever stack it's in.
 
-**Protect it with Cloudflare Access** (free for up to 50 users):
+**Don't open the address yet**: without step 7 it's public for everyone.
+
+#### Step 7: Protect it with Cloudflare Access
+
+Cloudflare Access puts a login page in front of the app. Only people on your
+list get through; everyone else never reaches your server.
 
 1. Zero Trust → **Access → Applications → Add an application →
    Self-hosted**.
-2. Application domain: the hostname from above.
-3. Policy: **Allow**, include **Emails** with the family's email addresses.
-4. Login method: **One-time PIN** (a code by email) works for everyone
-   without extra accounts. You can add Google login under **Settings →
-   Authentication**.
+2. **Application name:** for example `Seerr`. **Public hostname / Application
+   domain:** the same subdomain and domain as in step 6.
+3. **Add a policy** (or create one under **Access → Policies** and reuse it
+   for every app):
+   - Name: `Family`
+   - Action: **Allow**
+   - Include: **Emails** → the email addresses of everyone who may use the
+     app
+4. **Login methods:** keep **One-time PIN** on. Family members get a code by
+   email; nobody needs an extra account. You can add Google login later under
+   **Settings → Authentication**.
+5. Save.
 
-Family members now log in with a code from their mailbox before they see the
-app.
+Tip: create the `Family` policy once and attach it to every app you expose.
 
-**Which apps to expose:**
+#### Step 8: Test it
+
+Open the address (for example `https://requests.yourdomain.nl`) in a private
+browser window:
+
+1. You should first see Cloudflare's login page, **not** the app.
+2. Enter an email address from the policy, then the code you receive.
+3. Now the app opens.
+
+Try an address that isn't on the list: you should get no code and no access.
+
+#### Exposing Homepage
+
+Homepage only answers on names it knows. If you publish it (for example as
+`home.yourdomain.nl`), add that name to `.env` and apply it:
+
+```
+HOMEPAGE_EXTRA_HOSTS=127.0.0.1,home.yourdomain.nl
+```
+
+```bash
+docker compose up -d homepage
+```
+
+The tile links point to the server's LAN IP, so they only work at home or
+over Tailscale.
+
+#### Which apps to expose
 
 | Route | Apps |
 |---|---|
@@ -347,6 +472,123 @@ If AdGuard loads over mobile data, Tailscale works.
   reachable through Tailscale, not from the home network, and it's read-only
   until you sign in with your Tailscale account.
 
+### 5. SSH to the server via Tailscale
+
+With Tailscale running, you can reach the server's terminal from anywhere,
+without opening port 22 on your router. There are two ways:
+
+| | A. Server's own SSH over Tailscale | B. Tailscale SSH |
+|---|---|---|
+| Works with this stack as is | **Yes** | No: Tailscale must be installed on the server itself |
+| Login with | SSH key (or password) | Your Tailscale account, no SSH keys |
+| Who may log in | Linux accounts on the server | Rules in the Tailscale admin console |
+
+**Use A** unless you specifically want key-less logins managed from the
+Tailscale admin console.
+
+> **Don't run `tailscale set --ssh` in this stack's container.** Tailscale SSH
+> starts sessions inside the process that runs Tailscale. Here that's the
+> container, so you'd land in a shell *inside the Tailscale container*
+> instead of on the server, and it takes over port 22 on the Tailscale
+> address from the server's own SSH.
+
+#### A. The server's own SSH over Tailscale (recommended)
+
+The Tailscale container shares the server's network, so the server's normal
+SSH is already reachable on its Tailscale address.
+
+1. **Make sure SSH is installed** on the server (Ubuntu Server usually has
+   it already):
+
+   ```bash
+   sudo apt install openssh-server
+   sudo systemctl enable --now ssh
+   ```
+
+2. **Connect** from a laptop that has Tailscale switched on, at home or away:
+
+   ```bash
+   ssh <your-user>@home-server
+   ```
+
+   `home-server` is the Tailscale name (`TS_HOSTNAME`). It works through
+   Tailscale's MagicDNS, which is on by default. If the name doesn't resolve,
+   use the Tailscale IP: `ssh <your-user>@100.x.y.z`.
+
+3. **Recommended: log in with a key instead of a password.** On your laptop:
+
+   ```bash
+   ssh-keygen -t ed25519
+   ssh-copy-id <your-user>@home-server
+   ```
+
+   Test that `ssh <your-user>@home-server` now logs in without asking for the
+   server password. Then, **keeping that session open** so you can't lock
+   yourself out, turn off password logins on the server:
+
+   ```bash
+   echo "PasswordAuthentication no" | sudo tee /etc/ssh/sshd_config.d/10-keys-only.conf
+   sudo systemctl reload ssh
+   ```
+
+   Open a **new** terminal and check that you can still log in before
+   closing the old session.
+
+Never forward port 22 on your router. With Tailscale you don't need to.
+
+#### B. Tailscale SSH (Tailscale installed on the server)
+
+Tailscale SSH lets you log in with your Tailscale account instead of SSH keys,
+and you decide who may log in from the Tailscale admin console. It needs
+Tailscale installed **directly on the server**, which replaces this stack's
+Tailscale container. You can't run both.
+
+1. **Stop the container version.** In `.env`, remove `tailscale` from
+   `COMPOSE_PROFILES` (for example `COMPOSE_PROFILES=tunnel`), then:
+
+   ```bash
+   docker compose up -d --remove-orphans
+   ```
+
+   In the admin console, remove the old `home-server` machine (**Machines →
+   ⋯ → Remove**), so the new one can use the same name.
+
+2. **Install Tailscale on the server:**
+
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   ```
+
+3. **Log in with SSH and the subnet route enabled** (use your `LAN_SUBNET`):
+
+   ```bash
+   sudo tailscale up --ssh --hostname=home-server --advertise-routes=192.168.2.0/24
+   ```
+
+   It prints a login link. Open it and sign in with your Tailscale account.
+
+4. In the admin console, repeat [step 5 of the Tailscale guide](#step-5-two-settings-in-the-admin-console)
+   for the new machine: **disable key expiry** and **approve the subnet
+   route**.
+
+5. **Connect** from a device on your tailnet:
+
+   ```bash
+   ssh <your-user>@home-server
+   ```
+
+   The first time (and then every 12 hours) Tailscale asks you to confirm in
+   the browser. That's **check mode**, the default for your own devices.
+
+**Who may log in** is set in the admin console under **Access controls**, in
+the `ssh` section of the policy. The default lets you log in to your own
+devices as any user, including root, after the browser check. Adjust it if
+family members get access to your tailnet.
+
+**Note:** after this change, Tailscale is no longer managed by this stack. It
+updates with the server's normal updates (`sudo apt upgrade`), and its login
+isn't in `backup.sh`'s backups.
+
 ## Backups
 
 `backup.sh` saves the `config/` folder (AdGuard Home settings and filters,
@@ -457,7 +699,8 @@ docker compose down                # stop everything (config is kept)
   others (for example `dnsmasq`), stop that service, or set `DNS_BIND_IP` to
   the server's LAN IP in `.env`.
 - **Homepage shows "Host validation failed":** you opened it on a name or IP
-  that isn't in `SERVER_NAME`/`SERVER_IP`. Fix `.env`, then run
+  that isn't in `SERVER_NAME`, `SERVER_IP` or `HOMEPAGE_EXTRA_HOSTS` (for
+  example a Cloudflare hostname). Fix `.env`, then run
   `docker compose up -d homepage`.
 - **Homepage has no status dots:** the container name in `services.yaml`
   doesn't match `docker ps`, or the socket proxy isn't running
