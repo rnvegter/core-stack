@@ -1,0 +1,68 @@
+# Homepage services. setup.sh copies this template to
+# ${CONFIG_ROOT}/homepage/services.yaml on first run; edit that copy.
+#
+# {{HOMEPAGE_VAR_SERVER}} is SERVER_IP from .env.
+# 'server: docker' + 'container:' shows the live container status (via the
+# read-only socket proxy). Remove entries for apps you don't run.
+# Docs: https://gethomepage.dev/configs/services/
+
+- Home network:
+    - AdGuard Home:
+        icon: adguard-home.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:8053
+        description: DNS and ad blocking
+        server: docker
+        container: adguardhome
+
+- Watch:
+    - Jellyfin:
+        icon: jellyfin.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:8096
+        description: Movies and series
+        server: docker
+        container: jellyfin
+    - Seerr:
+        icon: jellyseerr.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:5055
+        description: Request a movie or series
+        server: docker
+        container: seerr
+
+- Downloads:
+    - SABnzbd:
+        icon: sabnzbd.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:8080
+        server: docker
+        container: sabnzbd
+    - Radarr:
+        icon: radarr.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:7878
+        server: docker
+        container: radarr
+    - Sonarr:
+        icon: sonarr.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:8989
+        server: docker
+        container: sonarr
+    - Prowlarr:
+        icon: prowlarr.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:9696
+        server: docker
+        container: prowlarr
+    - Bazarr:
+        icon: bazarr.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:6767
+        server: docker
+        container: bazarr
+
+- Monitoring:
+    - Uptime Kuma:
+        icon: uptime-kuma.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:3001
+        server: docker
+        container: uptime-kuma
+    - Dozzle:
+        icon: dozzle.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:8888
+        server: docker
+        container: dozzle

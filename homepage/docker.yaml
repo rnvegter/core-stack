@@ -1,0 +1,7 @@
+# Docker connection for container status on the services page.
+# Goes through the read-only socket proxy, not the raw Docker socket.
+# Docs: https://gethomepage.dev/configs/docker/
+
+docker:
+  host: socket-proxy
+  port: 2375

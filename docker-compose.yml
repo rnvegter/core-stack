@@ -1,0 +1,95 @@
+# Core stack: DNS, remote access and a start page for the house.
+# All values come from .env (loaded automatically by Docker Compose).
+
+services:
+  # --- DNS + ad blocking ----------------------------------------------
+  adguardhome:
+    image: adguard/adguardhome:${ADGUARD_TAG}
+    container_name: adguardhome
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/adguardhome/work:/opt/adguardhome/work
+      - ${CONFIG_ROOT}/adguardhome/conf:/opt/adguardhome/conf
+    ports:
+      - ${DNS_BIND_IP}:53:53/tcp
+      - ${DNS_BIND_IP}:53:53/udp
+      - ${ADGUARD_WEB_PORT}:80
+      - ${ADGUARD_SETUP_PORT}:3000
+
+  # --- Start page for the family --------------------------------------
+  homepage:
+    image: ghcr.io/gethomepage/homepage:${HOMEPAGE_TAG}
+    container_name: homepage
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      # Names/IPs the page may be opened on (Homepage rejects others)
+      HOMEPAGE_ALLOWED_HOSTS: ${SERVER_NAME},${SERVER_IP},localhost,127.0.0.1
+      # Available in the config files as {{HOMEPAGE_VAR_SERVER}}
+      HOMEPAGE_VAR_SERVER: ${SERVER_IP}
+    volumes:
+      - ${CONFIG_ROOT}/homepage:/app/config
+    ports:
+      - ${HOMEPAGE_PORT}:3000
+    depends_on:
+      - socket-proxy
+
+  # Read-only Docker API for Homepage's container status, so Homepage never
+  # gets the raw Docker socket. Not reachable from outside the stack.
+  socket-proxy:
+    image: lscr.io/linuxserver/socket-proxy:${SOCKET_PROXY_TAG}
+    container_name: socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /run
+
+  # --- Cloudflare Tunnel (profile: tunnel) ----------------------------
+  # Public hostnames are managed in the Cloudflare Zero Trust dashboard.
+  # Point them at http://host.docker.internal:<port> to reach any container
+  # on this server, including other stacks.
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_TAG}
+    container_name: cloudflared
+    restart: unless-stopped
+    profiles: [tunnel]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  # --- Tailscale (profile: tailscale) ---------------------------------
+  # Runs on the host network: the server's own ports are reachable on its
+  # Tailscale IP, and LAN_SUBNET is advertised as a subnet route.
+  tailscale:
+    image: tailscale/tailscale:${TAILSCALE_TAG}
+    container_name: tailscale
+    restart: unless-stopped
+    profiles: [tailscale]
+    network_mode: host
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_HOSTNAME: ${TS_HOSTNAME}
+      TS_ROUTES: ${LAN_SUBNET}
+      TS_EXTRA_ARGS: ${TS_EXTRA_ARGS}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      # The server keeps its own DNS; it must not loop through the tailnet
+      TS_ACCEPT_DNS: "false"
+    volumes:
+      - ${CONFIG_ROOT}/tailscale:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW

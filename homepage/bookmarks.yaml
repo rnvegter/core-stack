@@ -1,0 +1,10 @@
+# Bookmarks shown at the bottom of the page.
+# Docs: https://gethomepage.dev/configs/bookmarks/
+
+- Admin:
+    - Cloudflare Zero Trust:
+        - abbr: CF
+          href: https://one.dash.cloudflare.com/
+    - Tailscale:
+        - abbr: TS
+          href: https://login.tailscale.com/admin/machines

@@ -1,0 +1,22 @@
+# Homepage settings. Docs: https://gethomepage.dev/configs/settings/
+
+title: Home
+theme: dark
+color: slate
+headerStyle: clean
+statusStyle: dot
+hideVersion: true
+
+layout:
+  Home network:
+    style: row
+    columns: 3
+  Watch:
+    style: row
+    columns: 3
+  Downloads:
+    style: row
+    columns: 4
+  Monitoring:
+    style: row
+    columns: 3

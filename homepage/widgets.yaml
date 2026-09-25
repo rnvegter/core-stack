@@ -1,0 +1,19 @@
+# Info widgets at the top of the page.
+# Docs: https://gethomepage.dev/widgets/
+
+- resources:
+    cpu: true
+    memory: true
+    disk: /
+    uptime: true
+
+- datetime:
+    text_size: md
+    format:
+      dateStyle: long
+      timeStyle: short
+      hourCycle: h23
+
+- search:
+    provider: duckduckgo
+    target: _blank
