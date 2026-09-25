@@ -87,7 +87,8 @@ Don't have the Cloudflare or Tailscale parts ready yet? Remove them from
      name it (for example `home`), and copy the token from the install
      command shown (the long string after `--token`).
    - **Tailscale auth key:** in the [admin console](https://login.tailscale.com/admin/settings/keys)
-     go to **Settings → Keys → Generate auth key**. A one-time key is fine.
+     go to **Settings → Keys → Generate auth key**. New to Tailscale? Follow
+     the step-by-step guide in [4. Tailscale](#4-tailscale).
 
 3. **Run the setup script:**
 
@@ -218,31 +219,133 @@ app.
 
 ### 4. Tailscale
 
-1. After the first start the server appears in the
-   [admin console](https://login.tailscale.com/admin/machines) as
-   `TS_HOSTNAME` (default `home-server`).
-2. On that machine: **⋯ → Disable key expiry**, so the server never gets
-   logged out.
-3. **⋯ → Edit route settings:** approve the subnet route (`LAN_SUBNET`).
-   Tailscale devices can now reach every device on your home network, not
-   just the server.
-4. You can clear `TS_AUTHKEY` in `.env` now. The login is stored in
-   `config/tailscale/`.
+#### What Tailscale does
 
-**Ad blocking everywhere:** in the admin console go to **DNS → Nameservers →
-Add nameserver → Custom**, enter the server's **Tailscale IP** (100.x.y.z), and
-turn on **Override local DNS**. Every device on Tailscale then uses AdGuard
-Home, also away from home.
+Tailscale builds a **private network** (a "tailnet") between your own devices:
+the server, your phone, your laptop. Each device gets an extra IP address
+(`100.x.y.z`) that works from anywhere, at home or away, without opening ports
+on your router.
 
-**Family members:** install the Tailscale app on their phones and laptops and
-invite them to your tailnet (**Users → Invite users**). Check the current plan
-limits: the free Personal plan covers a limited number of users. Alternatives
-are sharing only the server with their own free Tailscale accounts
-(**Machines → home-server → Share**) or a paid family plan.
+You manage that network on Tailscale's website, the **admin console** at
+https://login.tailscale.com/admin. **There is no admin page on the server
+itself**: the Tailscale container is simply one of the devices in your
+network, which is why the stack publishes no port for it.
 
-**Exit node (optional):** set `TS_EXTRA_ARGS=--advertise-exit-node` in `.env`,
-run `docker compose up -d`, and approve it in the admin console. Devices can
-then send all their traffic through home, for example on public Wi-Fi.
+```
+Your phone (Tailscale app) ──┐
+Your laptop (Tailscale app) ─┼── your private Tailscale network ── server (container)
+Family phones ───────────────┘
+```
+
+#### Step 1: Create an account
+
+1. Go to https://login.tailscale.com and sign in with Google, Microsoft, Apple
+   or GitHub. This account becomes the owner of your network.
+2. Tailscale asks you to add a first device. You can skip that for now.
+
+#### Step 2: Create a key for the server
+
+The server has no screen to log in with, so you give it a key once.
+
+1. In the admin console: **Settings → Keys → Generate auth key**.
+2. Leave the defaults and click **Generate key**.
+3. Copy the key (starts with `tskey-auth-`). It's shown only once.
+
+#### Step 3: Give the key to the server
+
+On the server, in the `core-stack` folder:
+
+```bash
+nano .env
+```
+
+Find these lines and fill them in:
+
+```
+COMPOSE_PROFILES=tunnel,tailscale
+TS_AUTHKEY=tskey-auth-xxxxxxxxxxxx
+```
+
+- `COMPOSE_PROFILES` must contain `tailscale`. If you don't use Cloudflare yet,
+  write `COMPOSE_PROFILES=tailscale`.
+- Save with **Ctrl+O**, **Enter**, then close with **Ctrl+X**.
+
+Then start it:
+
+```bash
+docker compose up -d
+```
+
+#### Step 4: Check that the server is connected
+
+```bash
+docker exec tailscale tailscale status
+```
+
+The first line should show `home-server` (the value of `TS_HOSTNAME`) with a
+`100.x.y.z` address. The server also appears in the admin console under
+**Machines**.
+
+Doesn't work? Check the logs:
+
+```bash
+docker compose logs --tail 30 tailscale
+```
+
+#### Step 5: Two settings in the admin console
+
+Under **Machines**, click the **⋯** next to `home-server`:
+
+1. **Disable key expiry.** Otherwise the server gets logged out after 180
+   days.
+2. **Edit route settings** → tick the subnet route (your `LAN_SUBNET`, for
+   example `192.168.2.0/24`) → **Save**. Your phone can then reach
+   *everything* at home through Tailscale, not just the server.
+
+After this, you can empty `TS_AUTHKEY=` in `.env`. The server remembers its
+login in `config/tailscale/`.
+
+#### Step 6: Install the app on your phone
+
+1. Install **Tailscale** from the App Store or Play Store.
+2. Sign in with **the same account** as in step 1.
+3. Switch the connection on.
+
+#### Step 7: Test it
+
+Turn off Wi-Fi on your phone so you're on mobile data. Open in the browser:
+
+- `http://<server-lan-ip>:8053`: the AdGuard admin page (works thanks to the
+  subnet route from step 5)
+- or `http://100.x.y.z:8053`: the same page via the server's Tailscale
+  address
+
+If AdGuard loads over mobile data, Tailscale works.
+
+#### Later (optional)
+
+- **Ad blocking on your phone while away:** admin console → **DNS → Add
+  nameserver → Custom** → the server's `100.x.y.z` address → turn on
+  **Override local DNS**. Every device on Tailscale then uses AdGuard Home,
+  also away from home.
+- **Family members:** install the app, then invite them via **Users → Invite
+  users**, or share only the server with their own free Tailscale accounts
+  (**Machines → ⋯ → Share**). Check the current plan limits: the free Personal
+  plan covers a limited number of users.
+- **Exit node:** set `TS_EXTRA_ARGS=--advertise-exit-node` in `.env`, run
+  `docker compose up -d`, and approve it in the admin console. Devices can
+  then send all their traffic through home, for example on public Wi-Fi.
+- **Web interface for the server:** Tailscale has an optional page to view
+  and change the server's Tailscale settings. Enable it once (it survives
+  restarts):
+
+  ```bash
+  docker exec tailscale tailscale set --webclient
+  ```
+
+  Then open `http://100.x.y.z:5252` from a device on your tailnet. It's only
+  reachable through Tailscale, not from the home network, and it's read-only
+  until you sign in with your Tailscale account.
 
 ## Backups
 
