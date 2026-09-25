@@ -126,12 +126,13 @@ Don't have the Cloudflare or Tailscale parts ready yet? Remove them from
 ### 1. AdGuard Home
 
 1. Open `http://<server-ip>:3000` for the first-run wizard.
-2. **Admin web interface:** listen on **All interfaces**, port **80**.
-   Keep 80: that's the port *inside* the container. You reach it on
-   `http://<server-ip>:8053` afterwards.
+2. **Admin web interface:** listen on **All interfaces**, port **8053**
+   (the value of `ADGUARD_WEB_PORT` in `.env`). **Don't keep the default
+   80:** the stack only publishes `ADGUARD_WEB_PORT`, and port 80 on the
+   server is Homepage.
 3. **DNS server:** **All interfaces**, port **53**.
-4. Create the admin account and finish. From now on use
-   `http://<server-ip>:8053`.
+4. Create the admin account and finish. The wizard sends you to
+   `http://<server-ip>:8053`, where the admin page lives from now on.
 5. **Settings → DNS settings → Upstream DNS servers:** pick encrypted
    upstreams, for example:
 
@@ -335,6 +336,19 @@ docker compose down                # stop everything (config is kept)
 
 ## Troubleshooting
 
+- **After the AdGuard wizard you land on Homepage, or the admin page doesn't
+  load:** the admin port chosen in the wizard doesn't match
+  `ADGUARD_WEB_PORT`. Fix it in AdGuard's config file (as root, because
+  AdGuard owns it):
+
+  ```bash
+  docker compose stop adguardhome
+  sudo sed -i 's/^\([[:space:]]*address: 0\.0\.0\.0:\)[0-9]*$/\18053/' config/adguardhome/conf/AdGuardHome.yaml
+  docker compose up -d adguardhome
+  ```
+
+  Use your `ADGUARD_WEB_PORT` instead of `8053` if you changed it. The
+  `address:` line under `http:` should now end in that port.
 - **`setup.sh` says port 53 is in use:** another DNS server runs on the
   host. For Ubuntu's `systemd-resolved` the script offers the fix. For
   others (for example `dnsmasq`), stop that service, or set `DNS_BIND_IP` to

@@ -13,10 +13,18 @@ services:
       - ${CONFIG_ROOT}/adguardhome/work:/opt/adguardhome/work
       - ${CONFIG_ROOT}/adguardhome/conf:/opt/adguardhome/conf
     ports:
+      # Plain DNS for the house
       - ${DNS_BIND_IP}:53:53/tcp
       - ${DNS_BIND_IP}:53:53/udp
-      - ${ADGUARD_WEB_PORT}:80
+      # Admin interface: same port inside and outside the container, because
+      # AdGuard redirects the browser to this port after the setup wizard.
+      # Enter ADGUARD_WEB_PORT as the admin port in the wizard.
+      - ${ADGUARD_WEB_PORT}:${ADGUARD_WEB_PORT}
+      # First-run setup wizard (always port 3000 inside the container)
       - ${ADGUARD_SETUP_PORT}:3000
+      # Optional: DNS-over-TLS, e.g. for Android "Private DNS". Needs a
+      # certificate configured in AdGuard (Settings -> Encryption).
+      # - 853:853/tcp
 
   # --- Start page for the family --------------------------------------
   homepage:
