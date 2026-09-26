@@ -1,8 +1,8 @@
 # Core stack
 
 The base layer for a home server: DNS with ad blocking, easy names with HTTPS
-for your apps, remote access and a start page for the whole household.
-Configured from a single `.env` file.
+for your apps, remote access, a start page for the whole household, and
+encrypted offsite backups. Configured from a single `.env` file.
 
 | Service           | Role                                                      | Default address                |
 |-------------------|-----------------------------------------------------------|--------------------------------|
@@ -52,11 +52,18 @@ doesn't share a Docker network with them.
 ├── .env                # your settings and secrets (created by setup.sh, not committed)
 ├── docker-compose.yml  # service definitions, reads everything from .env
 ├── setup.sh            # install, start and update the stack
-├── backup.sh           # back up and restore config/
+├── backup.sh           # back up and restore config/, locally and to Hetzner
 ├── homepage/           # Homepage templates, copied to config/homepage/
 ├── config/             # app settings and state (not committed)
-└── backups/            # output of backup.sh (not committed)
+│   ├── adguardhome/    #   DNS settings, filters, rewrites
+│   ├── npm/            #   proxy hosts and certificates
+│   ├── homepage/       #   start page config
+│   └── tailscale/      #   Tailscale login
+└── backups/            # local output of backup.sh (not committed)
 ```
+
+`.env`, `.env.from-backup` (created by an offsite restore), `config/` and
+`backups/` are all in `.gitignore`, so secrets never end up on GitHub.
 
 ## Requirements
 
@@ -72,9 +79,13 @@ doesn't share a Docker network with them.
 - **For Cloudflare Tunnel and HTTPS names through the reverse proxy:** a free
   Cloudflare account, with a domain whose DNS is managed by Cloudflare.
 - **For Tailscale:** a Tailscale account.
+- **For offsite backups (optional):** a
+  [Hetzner Storage Box](https://www.hetzner.com/storage/storage-box/).
 
-Don't have the Cloudflare or Tailscale parts ready yet? Remove them from
-`COMPOSE_PROFILES` in `.env` and start with just AdGuard Home and Homepage.
+The reverse proxy, Cloudflare Tunnel and Tailscale are optional parts
+(`proxy`, `tunnel`, `tailscale` in `COMPOSE_PROFILES` in `.env`). Don't have
+one ready yet? Remove it from `COMPOSE_PROFILES` and add it later. AdGuard
+Home and Homepage always run.
 
 ## Installation
 
@@ -102,7 +113,8 @@ Don't have the Cloudflare or Tailscale parts ready yet? Remove them from
 
    This creates `.env` (readable only by you). Paste the token and key into
    `CLOUDFLARE_TUNNEL_TOKEN` and `TS_AUTHKEY`, or remove `tunnel` and/or
-   `tailscale` from `COMPOSE_PROFILES`. Then run:
+   `tailscale` from `COMPOSE_PROFILES` (default
+   `COMPOSE_PROFILES=proxy,tunnel,tailscale`). Then run:
 
    ```bash
    ./setup.sh
@@ -117,14 +129,53 @@ Don't have the Cloudflare or Tailscale parts ready yet? Remove them from
      uses sudo). The server itself keeps using your router's DNS.
    - **enables IP forwarding** for Tailscale subnet routing (asks first, uses
      sudo)
+   - **moves Homepage off port 80** if the reverse proxy is enabled and
+     Homepage still uses that port (asks first)
    - creates the folders and the Homepage config, pulls the images and starts
      the stack
+
+   Run `./setup.sh --update` later to update, or after changing
+   `COMPOSE_PROFILES`. See [Updating the stack](#updating-the-stack).
 
    Every question has a safe default when no terminal is attached: nothing is
    changed without your answer.
 
 4. **Store `.env` in your password manager** (for example as a secure note in
-   Proton Pass). It holds the tunnel token, and backups don't include it.
+   Proton Pass). It holds the tunnel token and, once you set up offsite
+   backups, the `RESTIC_PASSWORD` that decrypts them. Local backups don't
+   include `.env`; offsite backups do, but you need `RESTIC_PASSWORD` to open
+   them.
+5. **Optional: offsite backups.** See
+   [Offsite backups to a Hetzner Storage Box](#offsite-backups-to-a-hetzner-storage-box).
+
+## Settings in `.env`
+
+Everything is set in `.env`. `.env.example` explains every setting; these are
+the ones you're most likely to change. After a change, run
+`docker compose up -d` (or `./setup.sh --update` if you changed
+`COMPOSE_PROFILES` or `HOMEPAGE_PORT`).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COMPOSE_PROFILES` | `proxy,tunnel,tailscale` | Optional parts to run |
+| `SERVER_IP`, `LAN_SUBNET` | detected by `setup.sh` | The server's LAN address and your home network |
+| `SERVER_NAME` | `server.home` | Local name for Homepage |
+| `TZ` | `Europe/Amsterdam` | Timezone |
+| `CONFIG_ROOT` | `./config` | Where all app settings are stored |
+| `HOMEPAGE_PORT` | `3002` | Homepage's own port (ports 80/443 belong to the proxy) |
+| `HOMEPAGE_EXTRA_HOSTS` | `127.0.0.1` | Extra names Homepage accepts, such as a Cloudflare hostname |
+| `ADGUARD_WEB_PORT` | `8053` | AdGuard Home admin page |
+| `ADGUARD_SETUP_PORT` | `3000` | AdGuard Home first-run wizard |
+| `DNS_BIND_IP` | `0.0.0.0` | Address the DNS server listens on |
+| `NPM_ADMIN_PORT` | `81` | Nginx Proxy Manager admin page |
+| `CLOUDFLARE_TUNNEL_TOKEN` | empty | Tunnel token (secret) |
+| `TS_AUTHKEY`, `TS_HOSTNAME`, `TS_EXTRA_ARGS` | empty, `home-server`, empty | Tailscale login key (secret), name and extra flags |
+| `BACKUP_DIR`, `BACKUP_KEEP` | `./backups`, `7` | Where local backups go and how many to keep |
+| `OFFSITE_ENABLED` | `false` | Upload every backup to Hetzner |
+| `HETZNER_USER`, `HETZNER_HOST`, `HETZNER_PATH` | empty, empty, `core-stack` | Storage Box account, host and folder |
+| `RESTIC_PASSWORD` | empty | Encryption password for offsite backups (secret) |
+| `OFFSITE_KEEP_DAILY`, `_WEEKLY`, `_MONTHLY` | `7`, `4`, `6` | How many offsite snapshots to keep |
+| `*_TAG` | `latest` | Image version per app, see [Updating the stack](#updating-the-stack) |
 
 ## First-time configuration
 
@@ -136,8 +187,9 @@ Don't have the Cloudflare or Tailscale parts ready yet? Remove them from
    it on the server as `ADGUARD_WEB_PORT` (8053).
 3. **DNS server:** **All interfaces**, port **53**.
 4. Create the admin account and finish. The wizard then sends your browser
-   to port 80 on the server, which is **Homepage**, not AdGuard. That's
-   expected: open `http://<server-ip>:8053` instead. That's where the admin
+   to port 80 on the server, which is the **reverse proxy** (or Homepage if
+   you don't use the proxy), not AdGuard. That's expected: open
+   `http://<server-ip>:8053` instead. That's where the admin
    page lives from now on.
 5. **Settings → DNS settings → Upstream DNS servers:** pick encrypted
    upstreams, for example:
@@ -250,11 +302,11 @@ nano .env
 Fill in the token and make sure `COMPOSE_PROFILES` contains `tunnel`:
 
 ```
-COMPOSE_PROFILES=tunnel,tailscale
+COMPOSE_PROFILES=proxy,tunnel,tailscale
 CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoi...
 ```
 
-(Only using the tunnel for now? Write `COMPOSE_PROFILES=tunnel`.) Save with
+(Tailscale not ready yet? Leave it out: `COMPOSE_PROFILES=proxy,tunnel`.) Save with
 **Ctrl+O**, **Enter**, **Ctrl+X**, then start it:
 
 ```bash
@@ -392,12 +444,12 @@ nano .env
 Find these lines and fill them in:
 
 ```
-COMPOSE_PROFILES=tunnel,tailscale
+COMPOSE_PROFILES=proxy,tunnel,tailscale
 TS_AUTHKEY=tskey-auth-xxxxxxxxxxxx
 ```
 
 - `COMPOSE_PROFILES` must contain `tailscale`. If you don't use Cloudflare yet,
-  write `COMPOSE_PROFILES=tailscale`.
+  leave `tunnel` out: `COMPOSE_PROFILES=proxy,tailscale`.
 - Save with **Ctrl+O**, **Enter**, then close with **Ctrl+X**.
 
 Then start it:
@@ -726,7 +778,7 @@ Tailscale installed **directly on the server**, which replaces this stack's
 Tailscale container. You can't run both.
 
 1. **Stop the container version.** In `.env`, remove `tailscale` from
-   `COMPOSE_PROFILES` (for example `COMPOSE_PROFILES=tunnel`), then:
+   `COMPOSE_PROFILES` (for example `COMPOSE_PROFILES=proxy,tunnel`), then:
 
    ```bash
    docker compose up -d --remove-orphans
@@ -981,7 +1033,12 @@ docker compose down                # stop everything (config is kept)
 - The Cloudflare API token in NPM can only edit DNS for your domain. If it
   leaks, delete it under **My Profile → API Tokens** and create a new one.
 - `.env` is created with permissions `600`. Keep it that way: the tunnel token
-  lets anyone run your tunnel.
+  lets anyone run your tunnel, and `RESTIC_PASSWORD` decrypts your offsite
+  backups.
+- **Offsite backups:** use a Storage Box **sub-account** limited to its own
+  folder, and turn on Hetzner's automatic snapshots. The server's SSH key
+  (`/root/.ssh/hetzner-core-stack`) can then only reach its own backups, and
+  even deleted backups can be recovered from Hetzner's snapshots.
 - The socket proxy only allows **reading** container information. Homepage
   can't start, stop or change containers.
 - Anyone on your home network can open Homepage and see which apps exist. The
