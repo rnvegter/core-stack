@@ -533,7 +533,7 @@ If AdGuard loads over mobile data, Tailscale works.
 
 #### What the reverse proxy does
 
-Without a proxy you open apps as `http://192.168.2.50:11000`: an IP, a port
+Without a proxy you open apps as `http://192.168.2.50:8080`: an IP, a port
 number to remember, and no HTTPS. With the proxy, every app gets a name like
 `https://nextcloud.home.yourdomain.nl`, with a valid certificate. You set it
 all up by clicking in Nginx Proxy Manager (NPM).
@@ -544,7 +544,7 @@ Browser: https://nextcloud.home.yourdomain.nl
    │ 1. AdGuard Home: "*.home.yourdomain.nl is the server"
    ▼
 Nginx Proxy Manager (ports 80/443 on the server)
-   │ 2. "nextcloud.home... goes to port 11000"
+   │ 2. "nextcloud.home... goes to port 8080"
    ▼
 Nextcloud (any stack on this server)
 ```
@@ -629,6 +629,9 @@ automatically before it expires.
 
 #### Step 6: Add an app (example: Nextcloud)
 
+Nextcloud runs from its own repo, `rnvegter/nextcloud`, published on port
+`8080`. Its README ("Reverse proxy") has the same steps for that stack.
+
 1. **Hosts → Proxy Hosts → Add Proxy Host**.
 2. **Details** tab:
    - **Domain Names:** `nextcloud.home.yourdomain.nl`
@@ -662,22 +665,18 @@ otherwise.
 Many apps need to know they're behind a proxy, or they refuse the new name or
 build wrong links.
 
-**Nextcloud:** edit its `config.php` (in Nextcloud's config folder) and make
-sure these entries are there:
+**Nextcloud:** set the name in the Nextcloud stack's `.env` before its first
+start:
 
-```php
-'trusted_domains' =>
-  array (
-    0 => 'localhost',
-    1 => 'nextcloud.home.yourdomain.nl',
-  ),
-'trusted_proxies' => ['172.16.0.0/12'],
-'overwriteprotocol' => 'https',
-'overwrite.cli.url' => 'https://nextcloud.home.yourdomain.nl',
+```
+NEXTCLOUD_DOMAIN=nextcloud.home.yourdomain.nl
 ```
 
-`172.16.0.0/12` covers Docker's internal networks, which is where requests
-from the proxy come from. Restart Nextcloud afterwards.
+The stack then sets the trusted domain, HTTPS links and trusted proxies
+(`172.16.0.0/12`, Docker's internal networks, where the proxy's requests come
+from) itself. Nextcloud only reads the trusted domain at first install; to add
+or change it on a running instance, see "Good to know" in the Nextcloud
+README.
 
 **Other apps:** look in their settings or docs for a **base URL**, **public
 URL** or **external URL** option, and set it to
@@ -1072,8 +1071,9 @@ docker compose down                # stop everything (config is kept)
   DNS** template for the right domain, and that the credentials line is
   exactly `dns_cloudflare_api_token=...`. Try a higher Propagation Seconds
   value (120).
-- **Nextcloud says "Access through untrusted domain":** add the name to
-  `trusted_domains` in `config.php` (step 7 of the reverse proxy guide).
+- **Nextcloud says "Access through untrusted domain":** add the name, in the
+  Nextcloud stack's folder:
+  `docker compose exec -u www-data app php occ config:system:set trusted_domains 1 --value=nextcloud.home.yourdomain.nl`
 - **AdGuard's admin page gives "unable to connect" on port 8053:** AdGuard
   must listen on port 80 inside the container. Check with
   `docker compose logs adguardhome | grep "plain server"`: it should say
