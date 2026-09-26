@@ -13,6 +13,12 @@
         description: DNS and ad blocking
         server: docker
         container: adguardhome
+    - Nginx Proxy Manager:
+        icon: nginx-proxy-manager.png
+        href: http://{{HOMEPAGE_VAR_SERVER}}:81
+        description: Names and HTTPS for apps
+        server: docker
+        container: npm
 
 - Watch:
     - Jellyfin:

@@ -1,12 +1,14 @@
 # Core stack
 
-The base layer for a home server: DNS with ad blocking, remote access and a
-start page for the whole household. Configured from a single `.env` file.
+The base layer for a home server: DNS with ad blocking, easy names with HTTPS
+for your apps, remote access and a start page for the whole household.
+Configured from a single `.env` file.
 
 | Service           | Role                                                      | Default address                |
 |-------------------|-----------------------------------------------------------|--------------------------------|
 | AdGuard Home      | DNS server with ad and tracker blocking for every device  | `http://<server>:8053`, DNS on port 53 |
-| Homepage          | Start page with a tile for every app, plus status         | `http://<server>` (port 80)    |
+| Nginx Proxy Manager | Reverse proxy with a web interface: names like `nextcloud.home.yourdomain.nl` with HTTPS | admin on `http://<server>:81`, proxy on 80/443 |
+| Homepage          | Start page with a tile for every app, plus status         | `http://server.home` (via the proxy), or `http://<server>:3002` |
 | Cloudflare Tunnel | Exposes selected apps to the internet, no open ports      | managed in Cloudflare          |
 | Tailscale         | Private access to the server and home network from anywhere | managed in Tailscale         |
 | socket-proxy      | Read-only Docker access for Homepage's status dots        | internal only                  |
@@ -32,8 +34,10 @@ doesn't share a Docker network with them.
         other stacks: media, photos, ... (their own repos)
 ```
 
-- **At home:** open apps on the server's IP or `server.home`. Nothing needs a
-  proxy.
+- **At home:** open apps by name, for example
+  `https://nextcloud.home.yourdomain.nl`. AdGuard Home points those names at
+  the server, and Nginx Proxy Manager forwards each name to the right app with
+  HTTPS. These names only exist inside your home network (and on Tailscale).
 - **Cloudflare Tunnel:** only for apps you choose, such as Seerr or Mealie.
   Family members log in through Cloudflare Access first.
 - **Tailscale:** for everything that shouldn't or can't go through Cloudflare,
@@ -65,8 +69,8 @@ doesn't share a Docker network with them.
   sudo usermod -aG docker $USER   # log out and back in afterwards
   ```
 
-- **For Cloudflare Tunnel:** a free Cloudflare account, with a domain whose DNS
-  is managed by Cloudflare.
+- **For Cloudflare Tunnel and HTTPS names through the reverse proxy:** a free
+  Cloudflare account, with a domain whose DNS is managed by Cloudflare.
 - **For Tailscale:** a Tailscale account.
 
 Don't have the Cloudflare or Tailscale parts ready yet? Remove them from
@@ -163,7 +167,8 @@ for example stricter filtering or safe search on the kids' devices.
 
 ### 2. Homepage
 
-Open `http://server.home` (or `http://<server-ip>`). The tiles come from
+Open `http://<server-ip>:3002`, or `http://server.home` once you've done
+[step 2 of the reverse proxy guide](#step-2-make-httpserverhome-work). The tiles come from
 `config/homepage/services.yaml`. It's pre-filled with the apps from the media
 stack. Edit the file to add or remove apps; Homepage picks up changes
 automatically, just reload the page.
@@ -472,7 +477,184 @@ If AdGuard loads over mobile data, Tailscale works.
   reachable through Tailscale, not from the home network, and it's read-only
   until you sign in with your Tailscale account.
 
-### 5. SSH to the server via Tailscale
+### 5. Reverse proxy (Nginx Proxy Manager)
+
+#### What the reverse proxy does
+
+Without a proxy you open apps as `http://192.168.2.50:11000`: an IP, a port
+number to remember, and no HTTPS. With the proxy, every app gets a name like
+`https://nextcloud.home.yourdomain.nl`, with a valid certificate. You set it
+all up by clicking in Nginx Proxy Manager (NPM).
+
+```
+Browser: https://nextcloud.home.yourdomain.nl
+   │
+   │ 1. AdGuard Home: "*.home.yourdomain.nl is the server"
+   ▼
+Nginx Proxy Manager (ports 80/443 on the server)
+   │ 2. "nextcloud.home... goes to port 11000"
+   ▼
+Nextcloud (any stack on this server)
+```
+
+**The names are private.** They only exist in AdGuard Home, so they work at
+home and over Tailscale, not on the internet. For the HTTPS certificate,
+Cloudflare only has to prove you own the domain. It never learns about your
+apps or your home IP. The Cloudflare Tunnel is separate and keeps working as
+it does.
+
+This guide uses `home.yourdomain.nl` as the base name. Replace
+`yourdomain.nl` with the domain you have on Cloudflare.
+
+> **Existing install:** the proxy needs ports 80 and 443, which Homepage used
+> to have. Add `proxy` to `COMPOSE_PROFILES` in `.env` and run
+> `./setup.sh --update`. It offers to move Homepage to port 3002 and starts
+> the proxy.
+
+#### Step 1: Log in to Nginx Proxy Manager
+
+1. Open `http://<server-ip>:81`.
+2. Newer versions show a screen to create your admin account. Older versions
+   ask for the default login `admin@example.com` / `changeme`, and then make
+   you change the email and password right away.
+3. Use a strong password and store it in your password manager.
+
+#### Step 2: Make `http://server.home` work
+
+Port 80 now belongs to the proxy, so tell it that `server.home` is Homepage:
+
+1. **Hosts → Proxy Hosts → Add Proxy Host**.
+2. **Domain Names:** `server.home` (the value of `SERVER_NAME`).
+3. **Scheme:** `http`. **Forward Hostname / IP:** `homepage`. **Forward
+   Port:** `3000`. (Homepage is in this stack, so the proxy reaches it by
+   name and its internal port.)
+4. Tick **Block Common Exploits** and save.
+
+Open `http://server.home`: Homepage should appear. (`.home` isn't a real
+domain, so this one stays `http` without a certificate. The steps below give
+your apps proper HTTPS names.)
+
+#### Step 3: Point the names at the server in AdGuard Home
+
+1. AdGuard Home (`http://<server-ip>:8053`) → **Filters → DNS rewrites →
+   Add DNS rewrite**.
+2. **Domain:** `*.home.yourdomain.nl`. **Answer:** your `SERVER_IP`. Save.
+
+Every name ending in `.home.yourdomain.nl` now leads to the server, so you
+never have to add DNS entries per app.
+
+#### Step 4: Create a Cloudflare API token for certificates
+
+The proxy gets its certificates from Let's Encrypt. To prove you own the
+domain it briefly adds a DNS record at Cloudflare, so it needs a token with
+DNS rights for that one domain.
+
+1. Cloudflare dashboard → your profile icon → **My Profile → API Tokens →
+   Create Token**.
+2. Use the template **Edit zone DNS**.
+3. **Zone Resources:** Include → Specific zone → `yourdomain.nl`.
+4. **Continue to summary → Create Token**, and copy the token. It's shown only
+   once; store it in your password manager.
+
+#### Step 5: Create one certificate for all apps
+
+A wildcard certificate covers every `*.home.yourdomain.nl` name, so you do
+this only once.
+
+1. NPM → **SSL Certificates → Add SSL Certificate → Let's Encrypt**.
+2. **Domain Names:** `*.home.yourdomain.nl` and `home.yourdomain.nl`.
+3. Turn on **Use a DNS Challenge**. **DNS Provider:** Cloudflare.
+4. In **Credentials File Content**, replace the example with your token:
+
+   ```
+   dns_cloudflare_api_token=YOUR_TOKEN
+   ```
+
+5. **Propagation Seconds:** `60`. Agree to the terms and save.
+
+After a minute or two the certificate appears in the list. NPM renews it
+automatically before it expires.
+
+#### Step 6: Add an app (example: Nextcloud)
+
+1. **Hosts → Proxy Hosts → Add Proxy Host**.
+2. **Details** tab:
+   - **Domain Names:** `nextcloud.home.yourdomain.nl`
+   - **Scheme:** `http` (use `https` if the app itself only serves HTTPS,
+     like linuxserver.io's Nextcloud image)
+   - **Forward Hostname / IP:** `host.docker.internal` (this server, so
+     it reaches apps in any stack)
+   - **Forward Port:** the port the app is published on, the left-hand side
+     of `ports:` in that app's compose file
+   - Tick **Block Common Exploits** and **Websockets Support**
+3. **SSL** tab:
+   - **SSL Certificate:** the `*.home.yourdomain.nl` certificate
+   - Tick **Force SSL** and **HTTP/2 Support**
+4. **Advanced** tab, **only for Nextcloud**, so large uploads and long syncs
+   work:
+
+   ```
+   client_max_body_size 0;
+   proxy_request_buffering off;
+   proxy_read_timeout 3600s;
+   ```
+
+5. Save.
+
+**Other apps, such as Pantry Chef:** repeat this step with the app's own name
+and port. Leave the Advanced tab empty unless the app's documentation says
+otherwise.
+
+#### Step 7: Tell the app its new address
+
+Many apps need to know they're behind a proxy, or they refuse the new name or
+build wrong links.
+
+**Nextcloud:** edit its `config.php` (in Nextcloud's config folder) and make
+sure these entries are there:
+
+```php
+'trusted_domains' =>
+  array (
+    0 => 'localhost',
+    1 => 'nextcloud.home.yourdomain.nl',
+  ),
+'trusted_proxies' => ['172.16.0.0/12'],
+'overwriteprotocol' => 'https',
+'overwrite.cli.url' => 'https://nextcloud.home.yourdomain.nl',
+```
+
+`172.16.0.0/12` covers Docker's internal networks, which is where requests
+from the proxy come from. Restart Nextcloud afterwards.
+
+**Other apps:** look in their settings or docs for a **base URL**, **public
+URL** or **external URL** option, and set it to
+`https://<app>.home.yourdomain.nl`.
+
+#### Step 8: Test it
+
+1. At home, open `https://nextcloud.home.yourdomain.nl`. You should see the
+   app with a padlock in the address bar.
+2. Away from home, with Tailscale on: this works too, once your Tailscale DNS
+   uses AdGuard Home (see the Tailscale guide, "Ad blocking on your phone
+   while away") and the subnet route is approved.
+
+#### Good to know
+
+- **Never forward ports 80 or 443 on your router.** The proxy is for inside
+  the house and Tailscale. Public access goes through the Cloudflare Tunnel.
+- **Tunnel and proxy are separate.** Tunnel names (such as
+  `requests.yourdomain.nl`) go straight from Cloudflare to the app. Don't add
+  `*.home.yourdomain.nl` names in the tunnel.
+- **Homepage on its own name with HTTPS:** add a proxy host
+  `home.home.yourdomain.nl` → `homepage`, port `3000`, with the wildcard
+  certificate. Then add the name to `HOMEPAGE_EXTRA_HOSTS` in `.env` and run
+  `docker compose up -d homepage`.
+- **Update Homepage's tiles** to the new names in
+  `config/homepage/services.yaml`, so the family clicks the same links you
+  use.
+
+### 6. SSH to the server via Tailscale
 
 With Tailscale running, you can reach the server's terminal from anywhere,
 without opening port 22 on your router. There are two ways:
@@ -591,23 +773,27 @@ isn't in `backup.sh`'s backups.
 
 ## Backups
 
-`backup.sh` saves the `config/` folder (AdGuard Home settings and filters,
-Homepage config, Tailscale login) to a dated archive in `backups/`. On Linux
-it needs **sudo**, because AdGuard Home and Tailscale store their files as root.
+`backup.sh` saves the `config/` folder (AdGuard Home settings, Nginx Proxy
+Manager hosts and certificates, Homepage config, Tailscale login) to a dated
+archive in `backups/`, and optionally uploads an encrypted copy to a
+[Hetzner Storage Box](#offsite-backups-to-a-hetzner-storage-box). On Linux it
+needs **sudo**, because several apps store their files as root.
 
 ```bash
 sudo ./backup.sh                  # make a backup (stops the stack for a few seconds)
-sudo ./backup.sh --list           # list backups
-sudo ./backup.sh --restore FILE   # restore one
+sudo ./backup.sh --list           # list local backups
+sudo ./backup.sh --restore FILE   # restore a local backup
 ```
 
 - **Stopping briefly** makes sure nothing is half-written. It also means DNS
   is gone for those seconds, so schedule it at night. Use `--no-stop` to skip
   stopping.
-- **Retention:** only the newest `BACKUP_KEEP` backups (default 7) are kept.
-- **Private:** backups contain the Tailscale identity of the server. They're
-  created readable by root only.
-- **`.env` isn't included.** Keep it in your password manager.
+- **Retention:** only the newest `BACKUP_KEEP` local backups (default 7) are
+  kept.
+- **Private:** backups contain the Tailscale identity and certificates.
+  They're created readable by root only.
+- **Local backups don't include `.env`.** Offsite backups do (encrypted). Keep
+  a copy of `.env` in your password manager either way.
 - **Restore** asks for confirmation, moves your current `config/` aside to
   `config.before-restore-<date>`, unpacks the backup and starts the stack.
 
@@ -617,8 +803,125 @@ sudo ./backup.sh --restore FILE   # restore one
 30 3 * * * cd /path/to/core-stack && ./backup.sh >> backups/backup.log 2>&1
 ```
 
-Copy `backups/` to another machine or offsite storage now and then, so a disk
-failure doesn't take your backups with it.
+With offsite backups enabled, this nightly job uploads to Hetzner too.
+
+### Offsite backups to a Hetzner Storage Box
+
+A local backup doesn't help if the server's disk dies, or the house burns
+down. `backup.sh` can also send every backup to a
+[Hetzner Storage Box](https://www.hetzner.com/storage/storage-box/), using
+[restic](https://restic.net):
+
+- **Encrypted on the server** before anything leaves the house. Hetzner only
+  stores unreadable data.
+- **Versions:** keeps 7 daily, 4 weekly and 6 monthly snapshots (adjustable
+  in `.env`). Only changes are uploaded.
+- **Complete:** offsite snapshots contain `config/` **and** `.env`, so you can
+  rebuild the stack on a new server.
+- **Short DNS interruption:** the stack only stops while the files are
+  packed. The upload runs after everything is back up.
+
+> **The restic password is the one thing you must keep outside the server.**
+> Without it, the offsite backups can't be decrypted, not by you and not by
+> Hetzner. Store it in your password manager as soon as it's created.
+
+#### Step 1: Prepare the Storage Box at Hetzner
+
+1. Order a Storage Box in the [Hetzner Console](https://console.hetzner.com/)
+   if you don't have one. The smallest size is plenty for config backups.
+2. **Create a sub-account** for this stack (recommended): Storage Box →
+   **Sub-accounts → Create**, with base directory `core-stack`. The server
+   then can't see or touch anything else on your Storage Box. Note its
+   **username** (like `u123456-sub1`) and **hostname** (like
+   `u123456-sub1.your-storagebox.de`), and set a password.
+3. Turn on **SSH support** for that account (and **External reachability**
+   for a sub-account).
+4. Recommended: turn on **automatic snapshots** for the Storage Box. If the
+   server is ever compromised and deletes its backups, Hetzner's own
+   snapshots still have them.
+
+#### Step 2: Fill in `.env`
+
+On the server, in the `core-stack` folder (`nano .env`):
+
+```
+HETZNER_USER=u123456-sub1
+HETZNER_HOST=u123456-sub1.your-storagebox.de
+HETZNER_PATH=core-stack
+```
+
+For a sub-account with base directory `core-stack`, you can leave
+`HETZNER_PATH=core-stack`: it becomes a folder inside that directory.
+
+#### Step 3: Connect (one time)
+
+```bash
+sudo ./backup.sh --offsite-setup
+```
+
+This:
+- installs restic with apt if it's missing (asks first)
+- **generates the encryption password** and saves it as `RESTIC_PASSWORD` in
+  `.env` (asks first). **Copy it to your password manager now.**
+- creates an SSH key for root (`/root/.ssh/hetzner-core-stack`) and installs
+  it on the Storage Box. You confirm the host fingerprint and type the
+  Storage Box password **once**.
+- creates the encrypted backup repository on the Storage Box
+- offers to turn on `OFFSITE_ENABLED=true`, so every backup is uploaded
+
+#### Step 4: Make the first backup and check it
+
+```bash
+sudo ./backup.sh                  # local backup + upload
+sudo ./backup.sh --offsite-list   # shows the snapshot on Hetzner
+sudo ./backup.sh --offsite-check  # verifies the offsite data (5% sample)
+```
+
+Run `--offsite-check` now and then, for example monthly.
+
+#### Offsite commands
+
+```bash
+sudo ./backup.sh --local-only           # backup without upload, this once
+sudo ./backup.sh --offsite-list         # list snapshots
+sudo ./backup.sh --offsite-check        # verify the repository
+sudo ./backup.sh --offsite-restore      # restore the latest snapshot
+sudo ./backup.sh --offsite-restore ID   # restore a specific snapshot (ID from --offsite-list)
+```
+
+#### Restore on the same server
+
+```bash
+sudo ./backup.sh --offsite-restore
+```
+
+It asks for confirmation, downloads the snapshot, moves your current
+`config/` aside, puts the snapshot's `config/` in place and starts the stack.
+The snapshot's `.env` is saved as `.env.from-backup`; your own `.env` isn't
+touched.
+
+#### Rebuild on a new server
+
+1. Install Docker and clone this repository (see [Installation](#installation)).
+2. Run `./setup.sh --no-start` to create `.env`.
+3. In `.env`, fill in `HETZNER_USER`, `HETZNER_HOST`, `HETZNER_PATH` and
+   **`RESTIC_PASSWORD` from your password manager**.
+4. Connect and restore:
+
+   ```bash
+   sudo ./backup.sh --offsite-setup      # finds the existing repository
+   sudo ./backup.sh --offsite-restore
+   ```
+
+5. Put the old settings in place and start everything:
+
+   ```bash
+   mv .env.from-backup .env
+   ./setup.sh
+   ```
+
+   Check `SERVER_IP` and `LAN_SUBNET` if the new server has a different
+   address. `setup.sh` offers to correct them.
 
 ## Updating the stack
 
@@ -656,8 +959,8 @@ overwritten. Compare it with the templates in `homepage/` if you want new
 defaults.
 
 **Pin or roll back a version:** every image has a tag in `.env`
-(`ADGUARD_TAG`, `HOMEPAGE_TAG`, `CLOUDFLARED_TAG`, `TAILSCALE_TAG`,
-`SOCKET_PROXY_TAG`). Set it to a specific version instead of `latest`, run
+(`ADGUARD_TAG`, `HOMEPAGE_TAG`, `NPM_TAG`, `CLOUDFLARED_TAG`,
+`TAILSCALE_TAG`, `SOCKET_PROXY_TAG`). Set it to a specific version instead of `latest`, run
 `docker compose up -d`, and restore your pre-update backup if needed.
 
 ## Everyday commands
@@ -671,8 +974,12 @@ docker compose down                # stop everything (config is kept)
 
 ## Security notes
 
-- **Never expose** AdGuard Home's admin page, the socket proxy or Docker admin
-  tools through the tunnel.
+- **Never expose** AdGuard Home's admin page, Nginx Proxy Manager's admin
+  page (port 81), the socket proxy or Docker admin tools through the tunnel.
+- **Never forward ports 80 or 443** on your router. The reverse proxy is for
+  the home network and Tailscale only.
+- The Cloudflare API token in NPM can only edit DNS for your domain. If it
+  leaks, delete it under **My Profile → API Tokens** and create a new one.
 - `.env` is created with permissions `600`. Keep it that way: the tunnel token
   lets anyone run your tunnel.
 - The socket proxy only allows **reading** container information. Homepage
@@ -682,6 +989,34 @@ docker compose down                # stop everything (config is kept)
 
 ## Troubleshooting
 
+- **Offsite: "Permission denied (publickey)" or setup can't log in:** check
+  that **SSH support** (and **External reachability** for a sub-account) is
+  on in the Hetzner Console, and that `HETZNER_USER`/`HETZNER_HOST` match that
+  account exactly. Then run `sudo ./backup.sh --offsite-setup` again.
+- **Offsite: "wrong password or no key found":** `RESTIC_PASSWORD` in `.env`
+  doesn't match the one the repository was created with. Take the correct one
+  from your password manager.
+- **Offsite: the nightly backup ran, but nothing new in `--offsite-list`:**
+  check `backups/backup.log`. A failed upload doesn't affect the local backup,
+  and the log says why the upload failed.
+- **"Port 80 is already allocated" when starting the proxy:** Homepage (or
+  another program) still uses port 80. Run `./setup.sh --update`: it offers
+  to move Homepage to port 3002. Check other programs with
+  `sudo ss -ltnp | grep -E ':(80|443) '`.
+- **An app name shows NPM's "Congratulations" page:** there's no proxy host
+  for that exact name yet, or it has a typo. Check **Hosts → Proxy Hosts**.
+- **502 Bad Gateway on an app name:** the proxy can't reach the app. Check the
+  forward port, that the app runs, and the scheme (`http` vs `https`). If
+  `host.docker.internal` doesn't work, use the server's LAN IP instead.
+- **An app name doesn't resolve ("server not found"):** the device doesn't use
+  AdGuard Home as DNS, or the `*.home.yourdomain.nl` rewrite is missing.
+  Test with `nslookup nextcloud.home.yourdomain.nl <server-ip>`.
+- **Certificate request fails:** check that the token uses the **Edit zone
+  DNS** template for the right domain, and that the credentials line is
+  exactly `dns_cloudflare_api_token=...`. Try a higher Propagation Seconds
+  value (120).
+- **Nextcloud says "Access through untrusted domain":** add the name to
+  `trusted_domains` in `config.php` (step 7 of the reverse proxy guide).
 - **AdGuard's admin page gives "unable to connect" on port 8053:** AdGuard
   must listen on port 80 inside the container. Check with
   `docker compose logs adguardhome | grep "plain server"`: it should say

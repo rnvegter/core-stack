@@ -152,6 +152,27 @@ check_port53() {
   fi
 }
 
+# The reverse proxy needs host ports 80 and 443; Homepage used to have 80
+check_proxy_ports() {
+  profile_enabled proxy || return 0
+  case "${HOMEPAGE_PORT:-}" in
+    80|443) ;;
+    *) return 0 ;;
+  esac
+
+  warn "The reverse proxy needs port ${HOMEPAGE_PORT}, but Homepage uses it (HOMEPAGE_PORT=${HOMEPAGE_PORT})."
+  warn "Homepage stays reachable as http://${SERVER_NAME:-server.home} through the proxy."
+  if ask "Move Homepage to port 3002?"; then
+    set_env HOMEPAGE_PORT 3002
+    HOMEPAGE_PORT=3002
+    info "Updated HOMEPAGE_PORT to 3002"
+    # Free the old port now, so the proxy can start in the same run
+    docker compose stop homepage >/dev/null 2>&1 || true
+  else
+    fail "Change HOMEPAGE_PORT in .env, or remove 'proxy' from COMPOSE_PROFILES."
+  fi
+}
+
 # Subnet routing over Tailscale needs IP forwarding on the host
 check_ip_forward() {
   is_linux || return 0
@@ -174,7 +195,8 @@ check_ip_forward() {
 prepare_folders() {
   info "Creating folders under ${CONFIG_ROOT}"
   mkdir -p "${CONFIG_ROOT}/adguardhome/work" "${CONFIG_ROOT}/adguardhome/conf" \
-    "${CONFIG_ROOT}/homepage" "${CONFIG_ROOT}/tailscale"
+    "${CONFIG_ROOT}/homepage" "${CONFIG_ROOT}/tailscale" \
+    "${CONFIG_ROOT}/npm/data" "${CONFIG_ROOT}/npm/letsencrypt"
 
   local f
   for f in homepage/*.yaml; do
@@ -197,6 +219,7 @@ print_summary() {
     echo "  AdGuard Home   http://${SERVER_IP}:${ADGUARD_SETUP_PORT}  (first-run wizard)"
   fi
   echo "  DNS server     ${SERVER_IP}:53"
+  profile_enabled proxy     && echo "  Proxy admin    http://${SERVER_IP}:${NPM_ADMIN_PORT}  (Nginx Proxy Manager)"
   profile_enabled tunnel    && echo "  Cloudflare     tunnel running, manage it at https://one.dash.cloudflare.com/"
   profile_enabled tailscale && echo "  Tailscale      '${TS_HOSTNAME}', manage it at https://login.tailscale.com/admin/machines"
   if profile_enabled tailscale && [[ -n "${LAN_SUBNET:-}" ]]; then
@@ -236,6 +259,7 @@ load_env
 
 # --- Update --------------------------------------------------------
 if [[ "$MODE" == update ]]; then
+  check_proxy_ports
   prepare_folders
   docker compose config --quiet || fail "Compose file is invalid"
   info "Pulling latest images"
@@ -253,6 +277,7 @@ check_ids
 check_network
 load_env
 check_profiles
+check_proxy_ports
 check_port53
 check_ip_forward
 prepare_folders

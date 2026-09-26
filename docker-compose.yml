@@ -47,6 +47,28 @@ services:
     depends_on:
       - socket-proxy
 
+  # --- Reverse proxy with web interface (profile: proxy) --------------
+  # Gives apps names like nextcloud.home.yourdomain.nl with HTTPS.
+  # Configure everything in the admin interface on NPM_ADMIN_PORT.
+  # Reaches apps in other stacks via http://host.docker.internal:<port>,
+  # and apps in this stack by service name (e.g. homepage:3000).
+  npm:
+    image: jc21/nginx-proxy-manager:${NPM_TAG}
+    container_name: npm
+    restart: unless-stopped
+    profiles: [proxy]
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/npm/data:/data
+      - ${CONFIG_ROOT}/npm/letsencrypt:/etc/letsencrypt
+    ports:
+      - 80:80
+      - 443:443
+      - ${NPM_ADMIN_PORT}:81
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
   # Read-only Docker API for Homepage's container status, so Homepage never
   # gets the raw Docker socket. Not reachable from outside the stack.
   socket-proxy:
