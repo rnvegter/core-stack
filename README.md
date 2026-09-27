@@ -396,7 +396,7 @@ over Tailscale.
 |---|---|
 | Tunnel + Access (browser apps) | Seerr, Mealie, Grocy, Paperless-ngx, Actual Budget, Homepage |
 | Tunnel, app's own login + 2FA (mobile apps can't pass the Access login) | Home Assistant |
-| **Tailscale only** | Jellyfin (video isn't allowed through Cloudflare), Immich and Nextcloud (100 MB upload limit), Audiobookshelf |
+| **Tailscale only** | Jellyfin (video isn't allowed through Cloudflare), Immich and Nextcloud (100 MB upload limit), Audiobookshelf, Grimmory (Kobo and OPDS apps can't pass the Access login) |
 | **Never exposed** | Download apps, AdGuard Home, Dozzle, Uptime Kuma, Docker admin tools |
 
 ### 4. Tailscale
