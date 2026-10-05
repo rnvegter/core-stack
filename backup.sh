@@ -2,7 +2,7 @@
 # Back up and restore the core stack's settings, locally and optionally
 # offsite to a Hetzner Storage Box (encrypted with restic).
 #
-# Usage (on Linux, run with sudo: AdGuard Home, NPM and Tailscale store files as root):
+# Usage (on Linux, run with sudo: AdGuard Home and Tailscale store files as root):
 #   sudo ./backup.sh                          make a backup (stops the stack briefly);
 #                                             also uploads offsite if OFFSITE_ENABLED=true
 #   sudo ./backup.sh --no-stop                same, without stopping the containers
@@ -88,7 +88,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# Root-owned files (AdGuard Home, NPM, Tailscale) can't be read otherwise
+# Root-owned files (AdGuard Home, Tailscale) can't be read otherwise
 if [[ "$MODE" != list && "$(uname -s)" == Linux && $EUID -ne 0 ]]; then
   fail "Run with sudo: sudo ./backup.sh ${ARGS}"
 fi
