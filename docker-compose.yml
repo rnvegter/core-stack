@@ -18,7 +18,7 @@ services:
       - ${DNS_BIND_IP}:53:53/udp
       # Admin interface. AdGuard listens on its default port 80 inside the
       # container (keep 80 in the setup wizard); the host publishes it on
-      # ADGUARD_WEB_PORT because host port 80 is Homepage.
+      # ADGUARD_WEB_PORT so the host's port 80 stays free.
       - ${ADGUARD_WEB_PORT}:80
       # First-run setup wizard (always port 3000 inside the container)
       - ${ADGUARD_SETUP_PORT}:3000
@@ -36,8 +36,10 @@ services:
       PGID: ${PGID}
       TZ: ${TZ}
       # Names/IPs the page may be opened on (Homepage rejects others).
-      # Add a Cloudflare hostname via HOMEPAGE_EXTRA_HOSTS in .env.
-      HOMEPAGE_ALLOWED_HOSTS: ${SERVER_NAME},${SERVER_IP},localhost,${HOMEPAGE_EXTRA_HOSTS:-127.0.0.1}
+      # Homepage matches the Host header exactly, and browsers send the port
+      # for non-standard ports, so host:port is listed. Add a Cloudflare
+      # hostname via HOMEPAGE_EXTRA_HOSTS in .env.
+      HOMEPAGE_ALLOWED_HOSTS: ${SERVER_NAME}:${HOMEPAGE_PORT},${SERVER_IP}:${HOMEPAGE_PORT},${HOMEPAGE_EXTRA_HOSTS:-127.0.0.1}
       # Available in the config files as {{HOMEPAGE_VAR_SERVER}}
       HOMEPAGE_VAR_SERVER: ${SERVER_IP}
     volumes:

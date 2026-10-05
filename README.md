@@ -7,7 +7,7 @@ Configured from a single `.env` file.
 | Service           | Role                                                      | Default address                |
 |-------------------|-----------------------------------------------------------|--------------------------------|
 | AdGuard Home      | DNS server with ad and tracker blocking for every device  | `http://<server>:8053`, DNS on port 53 |
-| Homepage          | Start page with a tile for every app, plus status         | `http://server.home`, or `http://<server>:80` |
+| Homepage          | Start page with a tile for every app, plus status         | `http://server.home:3002`, or `http://<server>:3002` |
 | Cloudflare Tunnel | Exposes selected apps to the internet, no open ports      | managed in Cloudflare          |
 | Tailscale         | Private access to the server and home network from anywhere | managed in Tailscale         |
 | socket-proxy      | Read-only Docker access for Homepage's status dots        | internal only                  |
@@ -35,7 +35,8 @@ doesn't share a Docker network with them.
 
 - **At home:** open apps by IP and port, for example `http://192.168.1.10:8096`
   for Jellyfin. Homepage is the friendly exception: AdGuard Home points
-  `http://server.home` at the server, so the whole family can open it by name.
+  `server.home` at the server, so the whole family can open it as
+  `http://server.home:3002`.
 - **Cloudflare Tunnel:** only for apps you choose, such as Seerr or Mealie.
   Family members log in through Cloudflare Access first.
 - **Tailscale:** for everything that shouldn't or can't go through Cloudflare,
@@ -156,7 +157,7 @@ the ones you're most likely to change. After a change, run
 | `SERVER_NAME` | `server.home` | Local name for Homepage |
 | `TZ` | `Europe/Amsterdam` | Timezone |
 | `CONFIG_ROOT` | `./config` | Where all app settings are stored |
-| `HOMEPAGE_PORT` | `80` | Homepage's own port; reachable as `http://server.home` via the AdGuard rewrite |
+| `HOMEPAGE_PORT` | `3002` | Homepage's own port; reachable as `http://server.home:3002` via the AdGuard rewrite |
 | `HOMEPAGE_EXTRA_HOSTS` | `127.0.0.1` | Extra names Homepage accepts, such as a Cloudflare hostname |
 | `ADGUARD_WEB_PORT` | `8053` | AdGuard Home admin page |
 | `ADGUARD_SETUP_PORT` | `3000` | AdGuard Home first-run wizard |
@@ -180,8 +181,8 @@ the ones you're most likely to change. After a change, run
    it on the server as `ADGUARD_WEB_PORT` (8053).
 3. **DNS server:** **All interfaces**, port **53**.
 4. Create the admin account and finish. The wizard then sends your browser
-   to port 80 on the server, which is Homepage, not AdGuard. That's
-   expected: open `http://<server-ip>:8053` instead. That's where the admin
+   to port 80 on the server, where nothing lives anymore — that's expected.
+   Open `http://<server-ip>:8053` instead. That's where the admin
    page lives from now on.
 5. **Settings → DNS settings → Upstream DNS servers:** set DNS4EU, a free
    European resolver that blocks malware and phishing on top of AdGuard's
@@ -198,7 +199,7 @@ the ones you're most likely to change. After a change, run
    more from **Add blocklist → Choose from the list** if you want stricter
    blocking.
 7. **Filters → DNS rewrites → Add:** `server.home` → your `SERVER_IP`. Every
-   device can then open `http://server.home`.
+   device can then open `http://server.home:3002`.
 8. **Make it the DNS for the house:** in your router's DHCP settings, set the
    DNS server to `SERVER_IP`. On a UniFi router (for example a CloudGateway
    Max): **Settings → Networks** → your network → set **Advanced** to manual →
@@ -219,9 +220,9 @@ for example stricter filtering or safe search on the kids' devices.
 
 ### 2. Homepage
 
-Open `http://server.home`, or `http://<server-ip>:80`. `server.home` works
-once you've done step 7 of the AdGuard guide (a DNS rewrite that points the
-name at the server). The tiles come from
+Open `http://server.home:3002`, or `http://<server-ip>:3002`. The name works
+once you've done step 7 of the AdGuard guide (a DNS rewrite that points
+`server.home` at the server). The tiles come from
 `config/homepage/services.yaml`. It's pre-filled with the apps from the media
 stack. Edit the file to add or remove apps; Homepage picks up changes
 automatically, just reload the page.
@@ -837,8 +838,7 @@ defaults.
 **Coming from an install that has the reverse proxy?** Remove it:
 
 1. In `.env`, remove `proxy` from `COMPOSE_PROFILES`
-   (`COMPOSE_PROFILES=tunnel,tailscale`). Optionally set `HOMEPAGE_PORT=80`
-   so Homepage is reachable as `http://server.home` without a port.
+   (`COMPOSE_PROFILES=tunnel,tailscale`).
 2. Run `./setup.sh --update`: it recreates the containers and removes the
    npm container.
 3. Remove the Nginx Proxy Manager tile from `config/homepage/services.yaml`

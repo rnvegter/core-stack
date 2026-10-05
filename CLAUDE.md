@@ -3,12 +3,13 @@
 ## What this is
 
 Docker Compose "core" stack for a home Linux server: AdGuard Home (DNS +
-ad blocking), Homepage (start page, host port 80, reachable as
-`http://server.home` via an AdGuard DNS rewrite), plus optional
-profile-gated services: Cloudflare Tunnel (`tunnel`), Tailscale
-(`tailscale`). Public exposure goes through Cloudflare Tunnel only; there is
-no reverse proxy in the stack. It is one of several sibling stacks (e.g.
-`rnvegter/nextcloud`) and never shares a Docker network with them.
+ad blocking), Homepage (start page on `HOMEPAGE_PORT` 3002, reachable as
+`http://server.home:3002` via an AdGuard DNS rewrite; port 80 is avoided —
+it causes bind errors), plus optional profile-gated services: Cloudflare
+Tunnel (`tunnel`), Tailscale (`tailscale`). Public exposure goes through
+Cloudflare Tunnel only; there is no reverse proxy in the stack. It is one of
+several sibling stacks (e.g. `rnvegter/nextcloud`) and never shares a Docker
+network with them.
 
 ## Files
 
@@ -28,7 +29,8 @@ no reverse proxy in the stack. It is one of several sibling stacks (e.g.
 ## Invariants when editing
 
 - AdGuard admin: container port 80 ↔ host `ADGUARD_WEB_PORT` (8053); first-run wizard always port 3000.
-- Homepage lives on host port 80 (`HOMEPAGE_PORT`); `http://server.home` works via the AdGuard DNS rewrite.
+- Homepage lives on `HOMEPAGE_PORT` (3002; avoid port 80 — it causes bind errors); `http://server.home:<port>` works via the AdGuard DNS rewrite.
+- Homepage's `HOMEPAGE_ALLOWED_HOSTS` is an exact Host-header match: non-standard ports must appear as `host:port` (the compose lists `${SERVER_NAME}:${HOMEPAGE_PORT}` and `${SERVER_IP}:${HOMEPAGE_PORT}`).
 - Any new hostname Homepage is opened on must be added to `HOMEPAGE_EXTRA_HOSTS` (feeds `HOMEPAGE_ALLOWED_HOSTS`).
 - Apps reached via the tunnel use `host.docker.internal:host-gateway` (`extra_hosts`), not the Docker socket.
 - Homepage container status goes through the read-only `socket-proxy` (CONTAINERS=1, POST=0), never the raw socket.
