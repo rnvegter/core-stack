@@ -152,6 +152,26 @@ check_port53() {
   fi
 }
 
+# Rootless Docker (RootlessKit) refuses to publish ports below 1024; DNS needs 53
+check_rootless() {
+  is_linux || return 0
+  docker info --format '{{.SecurityOptions}}' 2>/dev/null | grep -q 'name=rootless' || return 0
+  local start
+  start=$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null) || start=1024
+  [[ "$start" -le 53 ]] && return 0
+
+  warn "Docker runs rootless, which can't publish port 53 (ports below 1024 are refused)."
+  warn "Fix: let unprivileged processes bind from port 53 up. Host-wide, but the standard fix for rootless Docker."
+  if ask "Apply this fix now (uses sudo)?"; then
+    printf 'net.ipv4.ip_unprivileged_port_start = 53\n' \
+      | sudo tee /etc/sysctl.d/99-dns-port.conf >/dev/null
+    sudo sysctl -p /etc/sysctl.d/99-dns-port.conf >/dev/null
+    info "Port 53 can now be published"
+  else
+    fail "AdGuard Home needs port 53. Apply the fix manually (see README) and run this again."
+  fi
+}
+
 # Subnet routing over Tailscale needs IP forwarding on the host
 check_ip_forward() {
   is_linux || return 0
@@ -237,6 +257,7 @@ load_env
 # --- Update --------------------------------------------------------
 if [[ "$MODE" == update ]]; then
   prepare_folders
+  check_rootless
   check_port53
   docker compose config --quiet || fail "Compose file is invalid"
   info "Pulling latest images"
@@ -254,6 +275,7 @@ check_ids
 check_network
 load_env
 check_profiles
+check_rootless
 check_port53
 check_ip_forward
 prepare_folders

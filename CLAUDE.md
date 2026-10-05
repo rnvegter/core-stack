@@ -30,6 +30,7 @@ network with them.
 
 - AdGuard admin: container port 80 ↔ host `ADGUARD_WEB_PORT` (8053); first-run wizard always port 3000.
 - Homepage lives on `HOMEPAGE_PORT` (3002; avoid port 80 — it causes bind errors); `http://server.home:<port>` works via the AdGuard DNS rewrite.
+- The server runs Docker in **rootless** mode (RootlessKit): publishing any port below 1024 (DNS 53, formerly 80) fails with "bind: permission denied" unless `net.ipv4.ip_unprivileged_port_start=53` is set; setup.sh's `check_rootless()` offers the fix.
 - Homepage's `HOMEPAGE_ALLOWED_HOSTS` is an exact Host-header match: non-standard ports must appear as `host:port` (the compose lists `${SERVER_NAME}:${HOMEPAGE_PORT}` and `${SERVER_IP}:${HOMEPAGE_PORT}`).
 - Any new hostname Homepage is opened on must be added to `HOMEPAGE_EXTRA_HOSTS` (feeds `HOMEPAGE_ALLOWED_HOSTS`).
 - Apps reached via the tunnel use `host.docker.internal:host-gateway` (`extra_hosts`), not the Docker socket.

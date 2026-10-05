@@ -74,6 +74,16 @@ doesn't share a Docker network with them.
   sudo usermod -aG docker $USER   # log out and back in afterwards
   ```
 
+- **Running Docker in rootless mode?** Docker without root can't publish
+  ports below 1024, and the DNS port (53) needs one. `setup.sh` detects
+  this and offers a one-time fix (it sets `net.ipv4.ip_unprivileged_port_start=53`
+  with sudo). By hand:
+
+  ```bash
+  echo 'net.ipv4.ip_unprivileged_port_start = 53' | sudo tee /etc/sysctl.d/99-dns-port.conf
+  sudo sysctl -p /etc/sysctl.d/99-dns-port.conf
+  ```
+
 - **For Cloudflare Tunnel:** a free Cloudflare account, with a domain whose
   DNS is managed by Cloudflare.
 - **For Tailscale:** a Tailscale account.
@@ -913,6 +923,20 @@ docker compose down                # stop everything (config is kept)
   offers to turn the stub listener off. The server itself keeps using your
   router's DNS. Another DNS server (for example `dnsmasq`)? Stop it, or set
   `DNS_BIND_IP` to the server's LAN IP in `.env`.
+- **AdGuard can't start: "bind: permission denied" on port 53 (RootlessKit):**
+  Docker runs in rootless mode, and rootless Docker can't publish ports below
+  1024 — the DNS port 53 needs one. `setup.sh` detects this and offers the
+  one-time fix. By hand:
+
+  ```bash
+  echo 'net.ipv4.ip_unprivileged_port_start = 53' | sudo tee /etc/sysctl.d/99-dns-port.conf
+  sudo sysctl -p /etc/sysctl.d/99-dns-port.conf
+  ```
+
+  Then `docker compose up -d`. If it still says the port is in use, the failed
+  attempt left a listener behind: restart Docker with `systemctl --user restart docker`
+  and try again. (Port 80 can't be published either — that's why Homepage lives
+  on port 3002.)
 - **Homepage shows "Host validation failed":** you opened it on a name or IP
   that isn't in `SERVER_NAME`, `SERVER_IP` or `HOMEPAGE_EXTRA_HOSTS` (for
   example a Cloudflare hostname). Fix `.env`, then run
