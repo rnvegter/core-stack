@@ -237,6 +237,7 @@ load_env
 # --- Update --------------------------------------------------------
 if [[ "$MODE" == update ]]; then
   prepare_folders
+  check_port53
   docker compose config --quiet || fail "Compose file is invalid"
   info "Pulling latest images"
   docker compose pull

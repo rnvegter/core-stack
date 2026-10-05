@@ -907,10 +907,12 @@ docker compose down                # stop everything (config is kept)
   sudo sed -i 's/^\([[:space:]]*address: 0\.0\.0\.0:\)[0-9]*$/\180/' config/adguardhome/conf/AdGuardHome.yaml
   docker compose up -d adguardhome
   ```
-- **`setup.sh` says port 53 is in use:** another DNS server runs on the
-  host. For Ubuntu's `systemd-resolved` the script offers the fix. For
-  others (for example `dnsmasq`), stop that service, or set `DNS_BIND_IP` to
-  the server's LAN IP in `.env`.
+- **AdGuard can't start: "bind: address already in use" on port 53:** on
+  Ubuntu, `systemd-resolved` holds port 53 with its stub listener, so Docker
+  can't publish the DNS port. Run `./setup.sh` once: it detects this and
+  offers to turn the stub listener off. The server itself keeps using your
+  router's DNS. Another DNS server (for example `dnsmasq`)? Stop it, or set
+  `DNS_BIND_IP` to the server's LAN IP in `.env`.
 - **Homepage shows "Host validation failed":** you opened it on a name or IP
   that isn't in `SERVER_NAME`, `SERVER_IP` or `HOMEPAGE_EXTRA_HOSTS` (for
   example a Cloudflare hostname). Fix `.env`, then run
