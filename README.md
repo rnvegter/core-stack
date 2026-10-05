@@ -183,28 +183,36 @@ the ones you're most likely to change. After a change, run
    to port 80 on the server, which is Homepage, not AdGuard. That's
    expected: open `http://<server-ip>:8053` instead. That's where the admin
    page lives from now on.
-5. **Settings → DNS settings → Upstream DNS servers:** pick encrypted
-   upstreams, for example:
+5. **Settings → DNS settings → Upstream DNS servers:** set DNS4EU, a free
+   European resolver that blocks malware and phishing on top of AdGuard's
+   ad blocking:
 
    ```
-   https://dns.quad9.net/dns-query
-   https://cloudflare-dns.com/dns-query
+   https://protective.joindns4.eu/dns-query
    ```
 
-   Select **Parallel requests** for speed.
+   Want a backup upstream for when DNS4EU is down? Add Quad9
+   (`https://dns.quad9.net/dns-query`) on a second line. Select
+   **Parallel requests** for speed.
 6. **Filters → DNS blocklists:** the default AdGuard list is a good start. Add
    more from **Add blocklist → Choose from the list** if you want stricter
    blocking.
 7. **Filters → DNS rewrites → Add:** `server.home` → your `SERVER_IP`. Every
    device can then open `http://server.home`.
 8. **Make it the DNS for the house:** in your router's DHCP settings, set the
-   DNS server to `SERVER_IP`. Devices pick it up when they renew their lease
-   (or reconnect to Wi-Fi).
+   DNS server to `SERVER_IP`. On a UniFi router (for example a CloudGateway
+   Max): **Settings → Networks** → your network → set **Advanced** to manual →
+   **DHCP Name Server** → custom, and enter `SERVER_IP`. Devices pick it up
+   when they renew their lease (or reconnect to Wi-Fi).
 
 > **If the server is down, the house has no DNS.** Many routers let you set a
-> second DNS server. If you set a public one there, the internet keeps working
-> when the server is down, but some devices will use it now and then and skip
-> ad blocking. Choose what matters more to your household.
+> second DNS server. DNS4EU also works as that second DNS (`86.54.11.1` and
+> `86.54.11.201`): the internet keeps working when the server is down, and
+> those devices still get DNS4EU's malware and ad blocking — but they skip
+> AdGuard's rules and statistics, and `server.home` won't resolve for them.
+> On UniFi routers the DNS servers in the list are used in parallel, not in
+> order, so a device may use DNS4EU even when the server is fine. Choose what
+> matters more to your household.
 
 Optional: **Settings → Client settings** lets you give devices their own rules,
 for example stricter filtering or safe search on the kids' devices.
